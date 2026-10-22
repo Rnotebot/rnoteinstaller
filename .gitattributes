@@ -1,0 +1,6 @@
+# Force LF line endings for all shell scripts so they run on Linux VPS
+# regardless of the OS they were committed from (Windows would otherwise
+# introduce CRLF, breaking the shebang: /usr/bin/env: 'sh\r': not found).
+*.sh text eol=lf
+*.env text eol=lf
+ttys.sh text eol=lf

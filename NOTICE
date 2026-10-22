@@ -1,0 +1,53 @@
+Rntech Engine
+=============
+
+This program is free software licensed under the GNU General Public License
+version 3 (see the LICENSE file). It is a SEPARATE program from the Rntech
+panel: the proprietary panel invokes this engine as a tool over SSH and does
+not incorporate any of its source.
+
+Derivation
+----------
+The destructive install path (rntech-install.sh) is a derivative work of:
+
+    bin456789/reinstall  (GPLv3)
+    https://github.com/bin456789/reinstall
+
+It is used against a self-hosted, reviewed fork. The whole config home
+(helper scripts, windows.xml answer file, *.bat) is served from our fork at
+runtime (see reinstall.sh `confhome`), not from the upstream repository.
+
+    Upstream project : bin456789/reinstall
+    Self-host base   : https://raw.githubusercontent.com/Rnotebot/rnoteinstaller/main
+
+If you later publish your own modified fork, record its repository and the
+fork flag/version here as well (any future fork flag must be noted in this
+file).
+
+Modifications relative to upstream reinstall
+---------------------------------------------
+1. Rebranded to "Rntech": script names (rntech-install.sh, rntech-setup.bat),
+   job-env field names (RNTECH_* instead of the upstream names), and guest
+   paths (C:\Rntech).
+2. SHA-256 verification of reinstall.sh before chmod/execute. TLS is always
+   verified (no --insecure). The Windows ISO is passed to reinstall as an
+   HTTP(S) URL (RNTECH_ISO_URL, validated to be http/https); reinstall fetches
+   it directly inside its Alpine stage. (An earlier design pre-downloaded the
+   ISO locally and passed a file:// path; that does not work because reinstall
+   reboots into a fresh Alpine ramdisk and its aria2 downloader rejects
+   file://.)
+3. Identity-bound fresh-VPS guard: the destructive write is refused unless
+   RNTECH_ALLOW_DISK_WIPE=1 AND the droplet's own cloud-metadata id
+   (http://169.254.169.254/metadata/v1/id) exactly equals
+   RNTECH_EXPECTED_PROVIDER_ID AND no /root/.rntech-installed marker exists.
+4. RDP credentials are never placed on a command line. The RDP username and
+   password (the latter base64-decoded from RNTECH_RDP_PASSWORD_B64) are fed to
+   reinstall's interactive prompts over STDIN, so the password never appears as
+   a process argument.
+
+5. The install script explicitly reboots into the installer environment after
+   reinstall stages the GRUB entry, and posts installing/finishing/done/failed
+   callbacks to the panel.
+
+Reporting changes: per GPLv3 section 5, modified files carry prominent notices
+stating that you changed them and the date of change.

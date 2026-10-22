@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Reinstall Logs</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        #log-container {
+            height: calc(100vh);
+            margin: 0;
+            padding: 8px;
+            overflow-y: scroll;
+        }
+
+        #scroll-to-bottom {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background-color: #0099FF;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            display: none;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+        }
+
+        #scroll-to-bottom:hover {
+            background-color: #00CCFF;
+        }
+
+        #scroll-to-bottom svg {
+            fill: #fff;
+        }
+
+        .done {
+            background-color: #cfc;
+        }
+
+        .error {
+            background-color: #fcc;
+        }
+    </style>
+</head>
+
+<body>
+    <pre id="log-container"></pre>
+    <button id="scroll-to-bottom">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M5 10l7 7 7-7H5z" />
+        </svg>
+    </button>
+
+    <script
+        src="https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/reconnecting-websocket/1.0.0/reconnecting-websocket.min.js"
+        type="application/javascript"></script>
+
+    <script>
+        const logContainer = document.getElementById('log-container');
+        const scrollToBottomButton = document.getElementById('scroll-to-bottom');
+        let shouldScrollToBottom = true;
+
+        // 缓冲区相关
+        let messageBuffer = [];
+        let flushScheduled = false;
+        const BUFFER_FLUSH_INTERVAL = 100; // 毫秒
+        const BUFFER_MAX_SIZE = 50; // 最大缓冲消息数
+
+        scrollToBottomButton.addEventListener('click', () => {
+            logContainer.scrollTop = logContainer.scrollHeight;
+        });
+
+        logContainer.addEventListener('scroll', () => {
+            const isAtBottom = Math.ceil(logContainer.scrollTop + logContainer.clientHeight) >= logContainer.scrollHeight;
+            if (isAtBottom) {
+                scrollToBottomButton.style.display = 'none';
+            } else {
+                scrollToBottomButton.style.display = 'block';
+            }
+
+            shouldScrollToBottom = isAtBottom;
+        });
+
+        // 刷新缓冲区到 DOM
+        function flushBuffer() {
+            if (messageBuffer.length === 0) {
+                flushScheduled = false;
+                return;
+            }
+
+            // 批量更新文本内容
+            const batchText = messageBuffer.join('\n');
+            logContainer.textContent += '\n' + batchText;
+
+            // 检查状态变化（优先级：error > done > start）
+            if (batchText.includes('***** ERROR *****')) {
+                document.body.className = 'error';
+            } else if (batchText.includes('***** DONE *****')) {
+                document.body.className = 'done';
+            } else if (batchText.includes('***** START TRANS *****')) {
+                document.body.className = '';
+            }
+
+            // 自动滚动
+            if (shouldScrollToBottom) {
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+
+            // 清空缓冲区
+            messageBuffer = [];
+            flushScheduled = false;
+        }
+
+        // 调度刷新
+        function scheduleFlush() {
+            if (!flushScheduled) {
+                flushScheduled = true;
+                requestAnimationFrame(() => {
+                    setTimeout(flushBuffer, BUFFER_FLUSH_INTERVAL);
+                });
+            }
+        }
+
+        // 添加消息到缓冲区
+        function bufferMessage(message) {
+            messageBuffer.push(message);
+
+            // 如果缓冲区满了，立即刷新
+            if (messageBuffer.length >= BUFFER_MAX_SIZE) {
+                if (flushScheduled) {
+                    // 取消之前的调度，立即刷新
+                    flushScheduled = false;
+                }
+                flushBuffer();
+            } else {
+                scheduleFlush();
+            }
+        }
+
+        var ws = new ReconnectingWebSocket(window.location.href.replace(/^http/, 'ws'));
+        ws.onopen = function () {
+            bufferMessage('WebSocket Connected.');
+        };
+        ws.onclose = function () {
+            bufferMessage('WebSocket Disconnected.');
+        };
+        ws.onmessage = function (event) {
+            bufferMessage(event.data);
+        };
+    </script>
+</body>
+
+</html>

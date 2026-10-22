@@ -1,0 +1,26 @@
+# https://github.com/archlinuxcn/repo/blob/master/archlinuxcn/frp/frpc.service
+
+[Unit]
+Description=Frp Client Service
+After=network-online.target
+Wants=network-online.target
+
+[X-Service-Old]
+Type=simple
+Restart=on-failure
+RestartSec=5s
+User=frpc
+ExecStart=/usr/local/bin/frpc -c /usr/local/etc/frpc/frpc.toml
+ExecReload=/usr/local/bin/frpc reload -c /usr/local/etc/frpc/frpc.toml
+
+[X-Service-New]
+Type=simple
+Restart=on-failure
+RestartSec=5s
+DynamicUser=yes
+LoadCredential=frpc.toml:/usr/local/etc/frpc/frpc.toml
+ExecStart=/usr/local/bin/frpc -c ${CREDENTIALS_DIRECTORY}/frpc.toml
+ExecReload=/usr/local/bin/frpc reload -c ${CREDENTIALS_DIRECTORY}/frpc.toml
+
+[Install]
+WantedBy=multi-user.target

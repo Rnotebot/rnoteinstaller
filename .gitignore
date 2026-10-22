@@ -1,0 +1,5 @@
+# Rntech engine — never commit downloaded media, logs, or runtime markers.
+*.iso
+*.log
+.rntech-*
+rntech-job.env

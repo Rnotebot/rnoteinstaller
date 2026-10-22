@@ -1,0 +1,28 @@
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[{windows.xml,windows-*.xml}]
+end_of_line = crlf
+
+[windows-frpc.xml]
+charset = utf-16-le
+indent_size = 2
+
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+
+[*.ps1]
+charset = utf-8-bom
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[reinstall.sh]
+shell_variant = bash
