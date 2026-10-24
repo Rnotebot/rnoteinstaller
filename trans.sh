@@ -6598,7 +6598,21 @@ install_windows() {
 
     apk add wimlib
 
-    download $iso /os/windows.iso
+    download $iso /os/windows.iso.download
+    # 通过 magic bytes (1f 8b) 检测 gzip，即使 URL 不以 .gz 结尾也可靠
+    if [ "$(head -c 2 /os/windows.iso.download | od -An -tx1 | tr -d ' \n')" = "1f8b" ]; then
+        info "Compressed (gzip) ISO detected, decompressing..."
+        apk add gzip pv 2>/dev/null || apk add gzip
+        # 流式解压到最终 ISO 文件，然后删除 .gz 源文件以节省空间
+        if command -v pv >/dev/null 2>&1; then
+            pv -f /os/windows.iso.download | gzip -dc >/os/windows.iso || error_and_exit "failed to decompress gzip ISO"
+        else
+            gzip -dc /os/windows.iso.download >/os/windows.iso || error_and_exit "failed to decompress gzip ISO"
+        fi
+        rm -f /os/windows.iso.download
+    else
+        mv -f /os/windows.iso.download /os/windows.iso
+    fi
     mount -o ro /os/windows.iso /iso
 
     sources_boot_wim=$(
