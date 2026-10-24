@@ -18,8 +18,7 @@ program that invokes this engine as a tool over SSH.
 - `reinstall.sh`, `trans.sh`, `windows.xml`, `windows-*.bat`,
   `windows-driver-utils.sh`, and the other helpers — the reinstall engine this
   fork is derived from. `confhome` in `reinstall.sh` is set to this fork so all
-  helpers are fetched from our own repository at runtime, not upstream
-  (`confhome` = `https://raw.githubusercontent.com/Rnotebot/rnoteinstaller/main`).
+  helpers are fetched from our own repository at runtime, not upstream.
 - `INTEGRATION.md` — exactly how the panel drives this engine per job.
 - `LICENSE`, `NOTICE` — GPLv3 text and the derivation/attribution notice.
 
