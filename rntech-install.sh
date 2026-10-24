@@ -239,51 +239,81 @@ echo "[*] ISO URL validated; reinstall will download it inside Alpine: ${RNTECH_
 
 # ---- 8. Pin the RDP password to the file reinstall consumes (H4) ------------
 # ---- 8. Decode the RDP password (kept out of the command line) --------------
-# reinstall prompts for username + password interactively. We feed those
-# prompts over STDIN (a here-string) so the password never appears as a process
-# argument / in the process list. We decode the base64 the panel sent.
-if [[ -z "${RNTECH_RDP_PASSWORD_B64:-}" ]]; then
-  callback failed "Refused: RDP password (base64) is empty."
-  echo "[FATAL] empty RNTECH_RDP_PASSWORD_B64. Abort." >&2
-  exit 5
-fi
-RNTECH_RDP_PASSWORD_PLAIN="$(printf '%s' "$RNTECH_RDP_PASSWORD_B64" | base64 -d 2>/dev/null)"
-if [[ -z "$RNTECH_RDP_PASSWORD_PLAIN" ]]; then
-  callback failed "Refused: could not decode RDP password."
-  echo "[FATAL] base64 decode of RDP password failed. Abort." >&2
-  exit 5
+# reinstall's `windows` path prompts for username + password interactively. We
+# feed those prompts over STDIN (a here-string) so the password never appears as
+# a process argument / in the process list. We decode the base64 the panel sent.
+#
+# The `dd` path (RAW DISK IMAGE restore, used by Atlas) does NOT prompt: the
+# image already contains its own baked-in user + password, so the panel's RDP
+# credentials are not used and must NOT be fed on STDIN. Skip the decode
+# entirely for dd. Default/unset install method keeps the ISO behavior.
+if [[ "${RNTECH_INSTALL_METHOD:-iso}" != "dd" ]]; then
+  if [[ -z "${RNTECH_RDP_PASSWORD_B64:-}" ]]; then
+    callback failed "Refused: RDP password (base64) is empty."
+    echo "[FATAL] empty RNTECH_RDP_PASSWORD_B64. Abort." >&2
+    exit 5
+  fi
+  RNTECH_RDP_PASSWORD_PLAIN="$(printf '%s' "$RNTECH_RDP_PASSWORD_B64" | base64 -d 2>/dev/null)"
+  if [[ -z "$RNTECH_RDP_PASSWORD_PLAIN" ]]; then
+    callback failed "Refused: could not decode RDP password."
+    echo "[FATAL] base64 decode of RDP password failed. Abort." >&2
+    exit 5
+  fi
 fi
 
 # ---- 9. Fresh-VPS guard runs LAST before the destructive stage --------------
 fresh_vps_guard
 
 # ---- 10. Invoke reinstall (destructive) -------------------------------------
-# --image-name selects the exact edition inside the ISO (an ISO holds several,
-# e.g. Standard/Datacenter). reinstall requires it. RNTECH_WINDOWS_VERSION
-# already holds the in-ISO edition name (e.g. "Windows Server 2019
-# SERVERSTANDARD"); it is case-insensitive.
-if [[ -z "${RNTECH_WINDOWS_VERSION:-}" ]]; then
-  callback failed "Refused: RNTECH_WINDOWS_VERSION (image name) is empty."
-  echo "[FATAL] empty RNTECH_WINDOWS_VERSION; reinstall needs --image-name. Abort." >&2
-  exit 5
-fi
-echo "[*] Starting reinstall windows (VirtIO auto-inject); VPS will reboot."
-callback installing "Staging reinstall (writing GRUB entry)"
+# Two installation methods, selected by RNTECH_INSTALL_METHOD:
+#   - "dd"  : restore a compressed RAW DISK IMAGE (Atlas). reinstall's `dd`
+#             sub-command writes the image byte-for-byte to disk. The image
+#             already contains Windows + its own user/password, so there is NO
+#             --image-name, NO --iso, NO --rdp-port, and NO interactive prompt
+#             (nothing fed on STDIN). RNTECH_ISO_URL carries the .gz/.xz/.zst
+#             image URL and is passed as --img.
+#   - "iso" : (DEFAULT, incl. unset) the existing `windows` install path. Byte
+#             -for-byte identical to before — do not change it.
+case "${RNTECH_INSTALL_METHOD:-iso}" in
+  dd)
+    # The .gz image URL rides in RNTECH_ISO_URL (validated non-empty + http(s)
+    # in section 7). reinstall's dd path downloads + decompresses it inside
+    # Alpine. --image-name is NOT required for dd (the image is already a full
+    # installed disk), so RNTECH_WINDOWS_VERSION is intentionally not enforced
+    # here.
+    echo "[*] Starting reinstall dd (raw disk image restore); VPS will reboot."
+    callback installing "Restoring Atlas disk image (dd)"
+    ./reinstall.sh dd --img "${RNTECH_ISO_URL}"
+    ;;
+  *)
+    # --image-name selects the exact edition inside the ISO (an ISO holds
+    # several, e.g. Standard/Datacenter). reinstall requires it.
+    # RNTECH_WINDOWS_VERSION already holds the in-ISO edition name (e.g.
+    # "Windows Server 2019 SERVERSTANDARD"); it is case-insensitive.
+    if [[ -z "${RNTECH_WINDOWS_VERSION:-}" ]]; then
+      callback failed "Refused: RNTECH_WINDOWS_VERSION (image name) is empty."
+      echo "[FATAL] empty RNTECH_WINDOWS_VERSION; reinstall needs --image-name. Abort." >&2
+      exit 5
+    fi
+    echo "[*] Starting reinstall windows (VirtIO auto-inject); VPS will reboot."
+    callback installing "Staging reinstall (writing GRUB entry)"
 
-# reinstall prompts: Username, Password, Retype password. Feed them via STDIN so
-# the password is never a command-line argument. --username is also passed; the
-# password is ONLY on stdin. The username line + two identical password lines
-# satisfy reinstall's read + confirm loop.
-RNTECH_USER="${RNTECH_RDP_USERNAME:-Administrator}"
-# NOTE (bug-13 fix): --iso is an HTTP(S) URL, not a file:// path. reinstall
-# records this URL into the GRUB cmdline (finalos_iso=...) and its Alpine stage
-# downloads it with aria2. A file:// path is rejected by aria2 and also would
-# not survive the reboot into Alpine.
-printf '%s\n%s\n%s\n' "$RNTECH_USER" "$RNTECH_RDP_PASSWORD_PLAIN" "$RNTECH_RDP_PASSWORD_PLAIN" \
-  | ./reinstall.sh windows \
-      --image-name "${RNTECH_WINDOWS_VERSION}" \
-      --iso "${RNTECH_ISO_URL}" \
-      --rdp-port "${RNTECH_RDP_PORT}"
+    # reinstall prompts: Username, Password, Retype password. Feed them via
+    # STDIN so the password is never a command-line argument. --username is also
+    # passed; the password is ONLY on stdin. The username line + two identical
+    # password lines satisfy reinstall's read + confirm loop.
+    RNTECH_USER="${RNTECH_RDP_USERNAME:-Administrator}"
+    # NOTE (bug-13 fix): --iso is an HTTP(S) URL, not a file:// path. reinstall
+    # records this URL into the GRUB cmdline (finalos_iso=...) and its Alpine
+    # stage downloads it with aria2. A file:// path is rejected by aria2 and
+    # also would not survive the reboot into Alpine.
+    printf '%s\n%s\n%s\n' "$RNTECH_USER" "$RNTECH_RDP_PASSWORD_PLAIN" "$RNTECH_RDP_PASSWORD_PLAIN" \
+      | ./reinstall.sh windows \
+          --image-name "${RNTECH_WINDOWS_VERSION}" \
+          --iso "${RNTECH_ISO_URL}" \
+          --rdp-port "${RNTECH_RDP_PORT}"
+    ;;
+esac
 
 # ---- 11. Completion bookkeeping ---------------------------------------------
 # Mark this host as installed so a stale re-run of the guard refuses, and best-
