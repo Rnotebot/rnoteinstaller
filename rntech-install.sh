@@ -283,7 +283,21 @@ case "${RNTECH_INSTALL_METHOD:-iso}" in
     # here.
     echo "[*] Starting reinstall dd (raw disk image restore); VPS will reboot."
     callback installing "Restoring Atlas disk image (dd)"
-    ./reinstall.sh dd --img "${RNTECH_ISO_URL}"
+    # reinstall's dd path STILL calls the interactive prompt_username +
+    # prompt_password (reinstall.sh ~5301/~5309), so with no STDIN the first
+    # `read` hits EOF and aborts. Feed empty lines so reinstall uses its
+    # defaults: blank username -> default account, blank password -> reinstall
+    # generates a random one. Those creds are irrelevant for dd: the raw image
+    # already carries the OS and its own SAM/credentials, which dd writes
+    # byte-for-byte over the whole disk — the Windows password is the one baked
+    # into the image when it was created, NOT anything set here.
+    #   line 1: username (empty -> default)
+    #   line 2: password (empty -> random, NO retype line is read in this case)
+    #   line 3: 'y' for setos_dd()'s conditional EFI-mismatch confirmation
+    #           (reinstall.sh ~1954). It only reads STDIN on an EFI machine when
+    #           the image isn't detected as EFI; if it never fires, this extra
+    #           line simply stays unread in the pipe and is harmless.
+    printf '%s\n%s\n%s\n' '' '' 'y' | ./reinstall.sh dd --img "${RNTECH_ISO_URL}"
     ;;
   *)
     # --image-name selects the exact edition inside the ISO (an ISO holds
