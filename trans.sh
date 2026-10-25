@@ -3460,6 +3460,7 @@ get_image_state() {
 
 modify_windows() {
     local os_dir=$1
+    local mode=$2
     info "Modify Windows"
 
     # https://learn.microsoft.com/windows-hardware/manufacture/desktop/windows-setup-states
@@ -3478,6 +3479,12 @@ modify_windows() {
 
     # bat 列表
     bats=
+
+    # virtio drivers first-boot install (ISO path only; placed first so NIC comes up early)
+    if [ "$mode" = add_virtio_drivers ]; then
+        download $confhome/windows-add-virtio-drivers.bat $os_dir/windows-add-virtio-drivers.bat
+        bats="$bats windows-add-virtio-drivers.bat"
+    fi
 
     # 1. rdp 端口
     if is_need_change_rdp_port; then
@@ -8312,6 +8319,14 @@ EOF
         cat -n "$winpeshl_ini"
     fi
 
+    # snapshot the parsed driver set (incl netkvm) to inject into the installed
+    # OS later; must copy while boot.wim is still mounted
+    mkdir -p /os/os-drivers
+    for drv_src in drivers custom_drivers; do
+        src=$(get_path_in_correct_case "/wim/$drv_src")
+        [ -d "$src" ] && cp -a "$src"/. /os/os-drivers/ 2>/dev/null || true
+    done
+
     # 提交修改 boot.wim
     info "Unmount boot.wim"
     wimunmount --commit /wim/
@@ -8363,7 +8378,12 @@ EOF
                 create_win_set_netconf_script /wim/windows-set-netconf-$ethx.bat
             done
         else
-            modify_windows /wim
+            # stage snapshot virtio drivers into the installed OS (C:\drivers),
+            # installed at first boot by windows-add-virtio-drivers.bat
+            dst=$(get_path_in_correct_case /wim/drivers)
+            mkdir -p "$dst"
+            [ -d /os/os-drivers ] && cp -a /os/os-drivers/. "$dst"/ 2>/dev/null || true
+            modify_windows /wim add_virtio_drivers
         fi
 
         info "Unmount install.wim"

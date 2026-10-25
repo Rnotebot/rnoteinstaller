@@ -67,6 +67,7 @@ callback() { # status, message
 # On any unexpected error, tell the panel the job failed, then propagate.
 trap 'rc=$?; callback failed "rntech-install.sh error (see droplet log)"; exit $rc' ERR
 
+callback installing "Install script started on the VPS"
 callback installing "Preparing install environment on the VPS"
 
 # ---- 3. Minimal dependencies -------------------------------------------------
@@ -234,7 +235,9 @@ case "$RNTECH_ISO_URL" in
     exit 3
     ;;
 esac
-callback installing "Windows ISO will be fetched by reinstall from the official source"
+# Resolve the ISO host only (no path/query/secrets) for a visible checkpoint.
+RNTECH_ISO_HOST="$(printf '%s' "$RNTECH_ISO_URL" | sed -E 's#^[a-zA-Z]+://([^/]+).*#\1#')"
+callback installing "Downloading Windows ISO from ${RNTECH_ISO_HOST}"
 echo "[*] ISO URL validated; reinstall will download it inside Alpine: ${RNTECH_ISO_URL}"
 
 # ---- 8. Pin the RDP password to the file reinstall consumes (H4) ------------
@@ -310,6 +313,8 @@ case "${RNTECH_INSTALL_METHOD:-iso}" in
       exit 5
     fi
     echo "[*] Starting reinstall windows (VirtIO auto-inject); VPS will reboot."
+    callback installing "Selecting Windows image: ${RNTECH_WINDOWS_VERSION} (custom/debloated images may not match — engine falls back to the first image)"
+    callback installing "VirtIO drivers (netkvm + viostor) will be injected by the engine"
     callback installing "Staging reinstall (writing GRUB entry)"
 
     # reinstall prompts: Username, Password, Retype password. Feed them via
