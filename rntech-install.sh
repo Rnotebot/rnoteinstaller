@@ -315,6 +315,7 @@ case "${RNTECH_INSTALL_METHOD:-iso}" in
     echo "[*] Starting reinstall windows (VirtIO auto-inject); VPS will reboot."
     callback installing "Selecting Windows image: ${RNTECH_WINDOWS_VERSION} (custom/debloated images may not match — engine falls back to the first image)"
     callback installing "VirtIO drivers (netkvm + viostor) will be injected by the engine"
+    callback installing "Injecting VirtIO offline into the Windows image (netkvm + viostor)"
     callback installing "Staging reinstall (writing GRUB entry)"
 
     # reinstall prompts: Username, Password, Retype password. Feed them via

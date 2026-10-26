@@ -3480,12 +3480,6 @@ modify_windows() {
     # bat 列表
     bats=
 
-    # virtio drivers first-boot install (ISO path only; placed first so NIC comes up early)
-    if [ "$mode" = add_virtio_drivers ]; then
-        download $confhome/windows-add-virtio-drivers.bat $os_dir/windows-add-virtio-drivers.bat
-        bats="$bats windows-add-virtio-drivers.bat"
-    fi
-
     # 1. rdp 端口
     if is_need_change_rdp_port; then
         create_win_change_rdp_port_script $os_dir/windows-change-rdp-port.bat "$rdp_port"
@@ -8364,6 +8358,66 @@ EOF
         cp $boot_dir/$sources_boot_wim /os/installer/$sources_boot_wim
     fi
 
+    # Offline-register virtio drivers into the already-mounted install.wim (/wim).
+    # Reuses add_driver_vpci's hivex merge mechanism, but authors the .reg from
+    # known virtio values because netkvm/viostor are not inbox (no source image to
+    # export from). Source files come from the /os/os-drivers snapshot. Client/ISO
+    # only; the Server path never calls this.
+    add_driver_virtio_offline() {
+        info "Injecting virtio drivers offline into install.wim"
+
+        local src=/os/os-drivers
+        [ -d "$src" ] || return 0
+
+        apk add hivex-perl
+
+        to_system_hive="$(find_file_ignore_case /wim/Windows/System32/config/SYSTEM)"
+
+        # Copy raw driver files into the mounted image.
+        drivers_dir="$(get_path_in_correct_case /wim/Windows/System32/drivers/)"
+        inf_dir="$(get_path_in_correct_case /wim/Windows/INF/)"
+        catroot_dir="$(get_path_in_correct_case '/wim/Windows/System32/CatRoot/{F750E6C3-38EE-11D1-85E5-00C04FC295EE}/')"
+        mkdir -p "$catroot_dir"
+
+        find "$src" -type f \( -iname '*.sys' -or -iname '*.dll' \) -exec cp -fv {} "$drivers_dir" \;
+        find "$src" -type f -iname '*.inf' -exec cp -fv {} "$inf_dir" \;
+        find "$src" -type f -iname '*.cat' -exec cp -fv {} "$catroot_dir" \;
+
+        # Author the SYSTEM hive registration from known virtio values.
+        local reg=/os/drivers/virtio-offline/system.reg
+        mkdir -p "$(dirname "$reg")"
+        cat <<'EOF' >"$reg"
+[\ControlSet001\Services\viostor]
+"Type"=dword:00000001
+"Start"=dword:00000000
+"Group"="SCSI miniport"
+"ErrorControl"=dword:00000001
+"ImagePath"="system32\\drivers\\viostor.sys"
+
+[\ControlSet001\Control\CriticalDeviceDatabase\pci#ven_1af4&dev_1001&subsys_00000000]
+"Service"="viostor"
+"ClassGUID"="{4D36E97B-E325-11CE-BFC1-08002BE10318}"
+
+[\ControlSet001\Control\CriticalDeviceDatabase\pci#ven_1af4&dev_1001&subsys_00020000]
+"Service"="viostor"
+"ClassGUID"="{4D36E97B-E325-11CE-BFC1-08002BE10318}"
+
+[\ControlSet001\Control\CriticalDeviceDatabase\pci#ven_1af4&dev_1001&subsys_00021af4]
+"Service"="viostor"
+"ClassGUID"="{4D36E97B-E325-11CE-BFC1-08002BE10318}"
+
+[\ControlSet001\Services\netkvm]
+"Type"=dword:00000001
+"Start"=dword:00000003
+"Group"="NDIS"
+"ErrorControl"=dword:00000001
+"ImagePath"="system32\\drivers\\netkvm.sys"
+EOF
+        hivexregedit --merge "$to_system_hive" "$reg"
+
+        apk del hivex-perl
+    }
+
     # windows 7 没有 invoke-webrequest
     # installer分区盘符不一定是D盘
     # 所以复制 resize.bat 到 install.wim
@@ -8378,12 +8432,11 @@ EOF
                 create_win_set_netconf_script /wim/windows-set-netconf-$ethx.bat
             done
         else
-            # stage snapshot virtio drivers into the installed OS (C:\drivers),
-            # installed at first boot by windows-add-virtio-drivers.bat
-            dst=$(get_path_in_correct_case /wim/drivers)
-            mkdir -p "$dst"
-            [ -d /os/os-drivers ] && cp -a /os/os-drivers/. "$dst"/ 2>/dev/null || true
-            modify_windows /wim add_virtio_drivers
+            # offline-register virtio NIC+storage into install.wim (client/ISO only)
+            if [ "$windows_type" = client ] && [ -d /os/os-drivers ]; then
+                add_driver_virtio_offline
+            fi
+            modify_windows /wim
         fi
 
         info "Unmount install.wim"
