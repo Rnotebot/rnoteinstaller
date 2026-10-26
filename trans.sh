@@ -8394,6 +8394,14 @@ EOF
 "ErrorControl"=dword:00000001
 "ImagePath"="system32\\drivers\\viostor.sys"
 
+; Ensure the CriticalDeviceDatabase parent chain exists. Debloated images
+; (e.g. AtlasOS) strip CriticalDeviceDatabase; hivexregedit does not auto-create
+; intermediate parents, so declare them before the child entries. Declaring an
+; already-existing key is idempotent on normal images.
+[\ControlSet001\Control]
+
+[\ControlSet001\Control\CriticalDeviceDatabase]
+
 [\ControlSet001\Control\CriticalDeviceDatabase\pci#ven_1af4&dev_1001&subsys_00000000]
 "Service"="viostor"
 "ClassGUID"="{4D36E97B-E325-11CE-BFC1-08002BE10318}"
