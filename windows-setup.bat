@@ -60,8 +60,60 @@ rem     set "ProductType=%%a"
 rem )
 
 rem 获取 installer 卷 id
-for /f "tokens=2" %%a in ('echo list vol ^| diskpart ^| find " installer "') do (
-    set "VolIndex=%%a"
+rem No find/findstr in PE: use cmd built-in substring-replace test instead of | find " installer "
+rem Tiered fallback for debloated PE (AtlasOS); each tier sets VolIndex, stop at first success.
+set "VolIndex="
+
+rem Tier 1: substring match " installer " label, take column 2 (Volume index)
+echo list vol | diskpart > X:\vol.txt
+setlocal enabledelayedexpansion
+set "T1="
+for /f "delims=" %%a in (X:\vol.txt) do (
+    set "line=%%a"
+    if not "!line: installer =!"=="!line!" (
+        for /f "tokens=2" %%b in ("!line!") do set "T1=%%b"
+    )
+)
+endlocal & set "VolIndex=%T1%"
+
+rem Tier 2: same list but token-scan each line; after word "Volume" take its index, confirm label installer
+if "%VolIndex%"=="" (
+    setlocal enabledelayedexpansion
+    set "T2="
+    for /f "delims=" %%a in (X:\vol.txt) do (
+        set "line=%%a"
+        if not "!line:installer=!"=="!line!" (
+            set "prev="
+            for %%t in (!line!) do (
+                if /i "!prev!"=="Volume" if not defined T2 set "T2=%%t"
+                set "prev=%%t"
+            )
+        )
+    )
+    endlocal & set "VolIndex=%T2%"
+)
+del X:\vol.txt
+
+rem Tier 3: scan drive letters for installer sentinel (engine copies ISO's sources\ to installer part),
+rem then map that letter back to a Volume index via list vol. if exist is a pure cmd builtin.
+if "%VolIndex%"=="" (
+    setlocal enabledelayedexpansion
+    set "T3Letter="
+    for %%d in (C D E F G H I J K L M N O P Q R S T U V W Y Z) do (
+        if not defined T3Letter if exist %%d:\sources\ set "T3Letter=%%d"
+    )
+    set "T3="
+    if defined T3Letter (
+        echo list vol | diskpart > X:\vol.txt
+        for /f "delims=" %%a in (X:\vol.txt) do (
+            set "line=%%a"
+            for /f "tokens=2,3" %%b in ("!line!") do (
+                if /i "%%c"=="!T3Letter!" set "T3=%%b"
+            )
+        )
+        del X:\vol.txt
+    )
+    endlocal & set "VolIndex=%T3%"
 )
 
 rem 及时退出
@@ -90,10 +142,10 @@ rem for /f "tokens=3" %%a in (X:\disk.txt) do (
 rem     set "DiskIndex=%%a"
 rem )
 
-rem PE 下没有 findstr，因此不能从 diskpart 的输出直接选出开头为 * 的行，要用复杂的方法取出磁盘编号
+rem PE 下没有 find/findstr，因此不能从 diskpart 的输出直接选出开头为 * 的行，要用复杂的方法取出磁盘编号
 
-rem 输出 diskpart 结果到文件
-(echo select vol %VolIndex% & echo list disk) | diskpart | find "* " > X:\disk.txt
+rem Write diskpart output to file (no | find "* "; the line scan below selects the *-row)
+(echo select vol %VolIndex% & echo list disk) | diskpart > X:\disk.txt
 type X:\disk.txt
 
 rem 逐行读取文件
@@ -135,11 +187,16 @@ endlocal & set "DiskIndex=%DiskIndex%"
 rem 判断 efi 还是 bios
 rem 或者用 https://learn.microsoft.com/windows-hardware/manufacture/desktop/boot-to-uefi-mode-or-legacy-bios-mode
 rem pe 下没有 mountvol
-echo list vol | diskpart | find " efi " && (
-    set BootType=efi
-) || (
-    set BootType=bios
+rem No find/findstr in PE: use cmd built-in substring-replace test instead of | find " efi "
+echo list vol | diskpart > X:\vol.txt
+set BootType=bios
+setlocal enabledelayedexpansion
+for /f "delims=" %%a in (X:\vol.txt) do (
+    set "line=%%a"
+    if not "!line: efi =!"=="!line!" set "BootType=efi"
 )
+endlocal & set "BootType=%BootType%"
+del X:\vol.txt
 
 rem 这个变量会被 trans.sh 修改
 set is4kn=0
@@ -321,12 +378,11 @@ if "%tempStr:~0,1%"=="%~2" (
 exit /b 1
 
 :sleep
-rem 没有加载网卡驱动，无法用 ping 来等待
-rem 没有 timeout 命令
-rem timeout /t 10 /nobreak
-echo wscript.sleep(%~1) > X:\sleep.vbs
-cscript //nologo X:\sleep.vbs
-del X:\sleep.vbs
+rem Arg in ms. WSH (cscript) is stripped from AtlasOS PE, so use ping on loopback as a
+rem dependency-free wait (ping.exe is present in PE, needs no NIC driver); ping -n N waits ~N-1s.
+set /a "_sleep_sec=(%~1 + 999) / 1000 + 1" >nul
+ping -n %_sleep_sec% 127.0.0.1 >nul
+set "_sleep_sec="
 exit /b
 
 :createPageFile
@@ -342,8 +398,18 @@ exit /b
 
 :drvload_if_scsi
 rem 不要查找 Class=SCSIAdapter 因为有些驱动等号两边有空格
-find /i "SCSIAdapter" "%~1" >nul
-if not errorlevel 1 (
+rem No find/findstr in PE: scan lines with cmd built-in substring test instead of find /i "SCSIAdapter"
+rem Match common casings to keep the original find /i case-insensitive behavior
+setlocal enabledelayedexpansion
+set "IsScsi="
+for /f "usebackq delims=" %%L in ("%~1") do (
+    set "line=%%L"
+    if not "!line:SCSIAdapter=!"=="!line!" set "IsScsi=1"
+    if not "!line:ScsiAdapter=!"=="!line!" set "IsScsi=1"
+    if not "!line:scsiadapter=!"=="!line!" set "IsScsi=1"
+)
+endlocal & set "IsScsi=%IsScsi%"
+if defined IsScsi (
     rem 有 N 种方法安装驱动
     rem 1. dism /online /add-driver /driver:"%~1"     # PE 不支持 /online 添加驱动
     rem 2. pnputil -i -a "%~1"
