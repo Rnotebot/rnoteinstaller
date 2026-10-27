@@ -8135,6 +8135,9 @@ EOF
     apk add xmlstarlet
     download $confhome/windows.xml /tmp/autounattend.xml
     locale=$(get_selected_image_prop 'Default Language')
+    # Fallback for repacks (e.g. AtlasOS) whose install.wim lacks Default Language metadata.
+    # Empty %locale% yields empty windowsPE locale tags -> Setup 0x80004005. Real values pass through unchanged.
+    [ -n "$locale" ] || locale=en-US
     use_default_rdp_port=$(is_need_change_rdp_port && echo false || echo true)
 
     # 7601.24214.180801-1700.win7sp1_ldr_escrow_CLIENT_ULTIMATE_x64FRE_en-us.iso Image Name 为空
