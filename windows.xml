@@ -3,10 +3,6 @@
 
     <settings pass="windowsPE">
         <component name="Microsoft-Windows-Setup" processorArchitecture="%arch%" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-            <!-- Explicit Setup UI language (same %locale% as International-Core, with trans.sh en-US fallback) -->
-            <SetupUILanguage>
-                <UILanguage>%locale%</UILanguage>
-            </SetupUILanguage>
             <!-- 安装过程可节省一点内存？vista 要删除不然报错 -->
             <EnableFirewall>false</EnableFirewall>
             <UserData>
