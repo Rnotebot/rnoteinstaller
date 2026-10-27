@@ -8135,9 +8135,24 @@ EOF
     apk add xmlstarlet
     download $confhome/windows.xml /tmp/autounattend.xml
     locale=$(get_selected_image_prop 'Default Language')
-    # Fallback for repacks (e.g. AtlasOS) whose install.wim lacks Default Language metadata.
-    # Empty %locale% yields empty windowsPE locale tags -> Setup 0x80004005. Real values pass through unchanged.
-    [ -n "$locale" ] || locale=en-US
+    # Harden %locale% so windows.xml never gets an empty/whitespace/invalid tag.
+    # WIM/DISM/wimlib output can carry a trailing CR, stray space or blank line that
+    # passes [ -n ] yet yields an invalid <UILanguage> (Setup 0x80004005 on AtlasOS repacks,
+    # or an unattend parse/component error on Server 2019). Strip CR/newlines/whitespace,
+    # keep only the first token, then validate it loosely looks like a language tag.
+    # A genuine value (e.g. en-US or a non-English tag) passes through unchanged (trimmed);
+    # only an empty/invalid value falls back to en-US.
+    locale=$(printf '%s' "$locale" | tr -d '\r\n' | tr '\t' ' ' | awk '{print $1}')
+    case "$locale" in
+        [A-Za-z][A-Za-z]) : ;;                             # bare language, e.g. "en"
+        [A-Za-z][A-Za-z]-[A-Za-z0-9]*) : ;;                # language-region, e.g. "en-US"
+        *) locale=en-US ;;                                 # empty or implausible -> fallback
+    esac
+    # Reject anything with characters outside a plausible language tag (defensive):
+    # the only allowed characters are letters, digits and hyphen.
+    case "$locale" in
+        *[!A-Za-z0-9-]*) locale=en-US ;;
+    esac
     use_default_rdp_port=$(is_need_change_rdp_port && echo false || echo true)
 
     # 7601.24214.180801-1700.win7sp1_ldr_escrow_CLIENT_ULTIMATE_x64FRE_en-us.iso Image Name 为空
