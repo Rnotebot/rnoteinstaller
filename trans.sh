@@ -3463,6 +3463,19 @@ modify_windows() {
     local mode=$2
     info "Modify Windows"
 
+    # rntech: per-job install-job.env (dd mode only; no-op for ISO/Setup path)
+    # the file is only ever staged into /configs by the dd flow, and the distro
+    # guard keeps the shared /wim (Setup/ISO) call a guaranteed no-op
+    if [ "$distro" = "dd" ] && [ -s /configs/rntech-install-job.env ]; then
+        rntech_job_dst=$(get_path_in_correct_case $os_dir/Windows/Setup/Scripts/install-job.env)
+        mkdir -p "$(dirname "$rntech_job_dst")"
+        cp /configs/rntech-install-job.env "$rntech_job_dst"
+        unix2dos "$rntech_job_dst"
+        info "rntech: wrote per-job install-job.env to the Windows disk"
+    else
+        info "rntech: no per-job env staged (distro=$distro); first-boot defaults apply"
+    fi
+
     # https://learn.microsoft.com/windows-hardware/manufacture/desktop/windows-setup-states
     # https://learn.microsoft.com/troubleshoot/azure/virtual-machines/reset-local-password-without-agent
     # https://learn.microsoft.com/windows-hardware/manufacture/desktop/add-a-custom-script-to-windows-setup

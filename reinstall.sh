@@ -114,6 +114,7 @@ Usage: $reinstall_____ anolis      7|8|23
                        [--ssh-port    PORT]
                        [--web-port    PORT]
                        [--frpc-config PATH]
+                       [--rntech-job-env PATH]
 
                        For Windows Only:
                        [--allow-ping]
@@ -4491,6 +4492,11 @@ This script is outdated, please download reinstall.sh again.
     if [ -n "$frpc_config" ]; then
         cat "$frpc_config" >$initrd_dir/configs/frpc.conf
     fi
+    # rntech: carry the per-job install-job.env across the Ubuntu->Alpine reboot
+    # via the same secret-safe /configs channel as save_password (not the GRUB cmdline)
+    if [ -n "$rntech_job_env" ] && [ -f "$rntech_job_env" ]; then
+        cp "$rntech_job_env" "$initrd_dir/configs/rntech-install-job.env"
+    fi
 
     # 收集 cloud-data 打包进 initrd
     if [ -n "$cloud_data" ]; then
@@ -4966,6 +4972,7 @@ for o in ci installer debug minimal no-cloud-kernel no-auto-drivers allow-ping f
     allow-ping: \
     commit: \
     frpc-conf: frpc-config: \
+    rntech-job-env: \
     target-disk: \
     force-boot-mode: \
     force-old-windows-setup:; do
@@ -5091,6 +5098,12 @@ while true; do
         # 转为绝对路径
         frpc_config=$(readlink -f "$frpc_config")
 
+        shift 2
+        ;;
+    --rntech-job-env)
+        # rntech: per-job env file packed into the Alpine initrd /configs channel
+        [ -n "$2" ] || error_and_exit "Need value for $1"
+        rntech_job_env=$2
         shift 2
         ;;
     --force-boot-mode)

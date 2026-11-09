@@ -286,6 +286,28 @@ case "${RNTECH_INSTALL_METHOD:-iso}" in
     # here.
     echo "[*] Starting reinstall dd (raw disk image restore); VPS will reboot."
     callback installing "Restoring Atlas disk image (dd)"
+    # rntech: stage the per-job install-job.env that reinstall packs into the
+    # Alpine initrd /configs channel and trans.sh writes onto the Windows disk.
+    # Raw unquoted KEY=VALUE (the batch for/f reader takes the raw remainder);
+    # NOT a copy of the single-quoted /root/rntech-job.env (which also carries
+    # engine-only vars). The base64 password stays base64 (never decoded here).
+    RNTECH_JOB_ENV_DD=/root/rntech-install-job.env
+    {
+      printf 'RNTECH_INSTALL_SOURCE_MODE=%s\n' "${RNTECH_INSTALL_SOURCE_MODE:-}"
+      printf 'RNTECH_RDP_PORT=%s\n'            "${RNTECH_RDP_PORT:-}"
+      printf 'RNTECH_RDP_PASSWORD_B64=%s\n'    "${RNTECH_RDP_PASSWORD_B64:-}"
+      printf 'RNTECH_RDP_USERNAME=%s\n'        "${RNTECH_RDP_USERNAME:-}"
+      printf 'RNTECH_SETUP_MODE=%s\n'          "${RNTECH_SETUP_MODE:-}"
+      printf 'RNTECH_WINDOWS_VERSION=%s\n'     "${RNTECH_WINDOWS_VERSION:-}"
+      printf 'RNTECH_WINDOWS_VERSION_SLUG=%s\n' "${RNTECH_WINDOWS_VERSION_SLUG:-}"
+      printf 'RNTECH_INSTALL_STATUS_URL=%s\n'  "${RNTECH_INSTALL_STATUS_URL:-}"
+      printf 'RNTECH_INSTALL_LOG_URL=%s\n'     "${RNTECH_INSTALL_LOG_URL:-}"
+      printf 'RNTECH_INSTALL_JOB_ID=%s\n'      "${RNTECH_INSTALL_JOB_ID:-}"
+      printf 'RNTECH_INSTALL_JOB_TOKEN=%s\n'   "${RNTECH_INSTALL_JOB_TOKEN:-}"
+      printf 'RNTECH_INSTALL_ATTEMPT_ID=%s\n'  "${RNTECH_INSTALL_ATTEMPT_ID:-}"
+      printf 'RNTECH_INSTALL_NODE=%s\n'        "${RNTECH_INSTALL_NODE:-}"
+    } > "$RNTECH_JOB_ENV_DD"
+    chmod 600 "$RNTECH_JOB_ENV_DD"
     # reinstall's dd path STILL calls the interactive prompt_username +
     # prompt_password (reinstall.sh ~5301/~5309), so with no STDIN the first
     # `read` hits EOF and aborts. Feed empty lines so reinstall uses its
@@ -300,7 +322,14 @@ case "${RNTECH_INSTALL_METHOD:-iso}" in
     #           (reinstall.sh ~1954). It only reads STDIN on an EFI machine when
     #           the image isn't detected as EFI; if it never fires, this extra
     #           line simply stays unread in the pipe and is harmless.
-    printf '%s\n%s\n%s\n' '' '' 'y' | ./reinstall.sh dd --img "${RNTECH_ISO_URL}"
+    printf '%s\n%s\n%s\n' '' '' 'y' | ./reinstall.sh dd --img "${RNTECH_ISO_URL}" --rntech-job-env "$RNTECH_JOB_ENV_DD"
+    # Best-effort shred if control ever returns (dd reboots into Alpine, so this
+    # is typically dead code; the file is destroyed by the dd disk overwrite).
+    if command -v shred >/dev/null 2>&1; then
+      shred -u "$RNTECH_JOB_ENV_DD" 2>/dev/null || rm -f "$RNTECH_JOB_ENV_DD"
+    else
+      rm -f "$RNTECH_JOB_ENV_DD"
+    fi
     ;;
   *)
     # --image-name selects the exact edition inside the ISO (an ISO holds
